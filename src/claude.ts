@@ -23,7 +23,7 @@ function getMaxTurns(): string {
   return process.env.CLAUDE_MAX_TURNS ?? "25";
 }
 const ALLOWED_TOOLS =
-  'Read,Glob,Grep,Write,Bash(echo * | pnpm tsx scripts/calc-tax.ts),Bash(mkdir -p *)';
+  'Read,Glob,Grep,Write,Bash(pnpm tsx scripts/calc-tax.ts *),Bash(mkdir -p *)';
 
 export interface CallClaudeOptions {
   maxTurns?: number;

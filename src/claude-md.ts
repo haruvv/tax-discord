@@ -21,7 +21,7 @@ deductions/ — 控除証明書
 4. 不足情報があればユーザーに質問
 5. 「サマリ作って」等の指示で:
    a. \${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/tax_data.json から CalcTaxInput を構成
-   b. Bash で \`echo '<JSON>' | pnpm tsx scripts/calc-tax.ts\` を実行（必ずこの形式で）
+   b. CalcTaxInput JSON を Write で一時ファイル（\${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/calc_input.json）に保存し、Bash で \`pnpm tsx scripts/calc-tax.ts \${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/calc_input.json\` を実行
    c. 計算結果を使ってサマリ文章を生成
    d. \${TAX_DOCS_ROOT}/\${TAX_YEAR}/output/summary.txt と \${TAX_DOCS_ROOT}/\${TAX_YEAR}/output/summary.json を Write で出力
 

@@ -242,8 +242,14 @@ function calculate(input: CalcTaxInput, rules: TaxRules): CalcTaxOutput {
   };
 }
 
-// --- stdin 読み込み ---
-function readStdin(): Promise<string> {
+// --- 入力読み込み（ファイルパス引数 or stdin） ---
+import { readFileSync } from "node:fs";
+
+function readInput(): Promise<string> {
+  const filePath = process.argv[2];
+  if (filePath) {
+    return Promise.resolve(readFileSync(filePath, "utf-8"));
+  }
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
     process.stdin.on("data", (chunk: Buffer) => chunks.push(chunk));
@@ -254,7 +260,7 @@ function readStdin(): Promise<string> {
 
 // --- エントリポイント ---
 async function main(): Promise<void> {
-  const raw = await readStdin();
+  const raw = await readInput();
 
   let parsed: unknown;
   try {
