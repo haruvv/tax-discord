@@ -6,8 +6,12 @@ export interface ClaudeResult {
   sessionId: string;
 }
 
-const TIMEOUT_MS = Number(process.env.CLAUDE_TIMEOUT_MS) || 90_000;
-const MAX_TURNS = process.env.CLAUDE_MAX_TURNS ?? "10";
+function getTimeoutMs(): number {
+  return Number(process.env.CLAUDE_TIMEOUT_MS) || 90_000;
+}
+function getMaxTurns(): string {
+  return process.env.CLAUDE_MAX_TURNS ?? "10";
+}
 const ALLOWED_TOOLS =
   'Read,Glob,Grep,Write,Bash(npx tsx scripts/calc-tax.ts *)';
 
@@ -17,7 +21,7 @@ function buildArgs(message: string, sessionId?: string): string[] {
     "--output-format", "json",
     "--append-system-prompt-file", "CLAUDE.md",
     "--allowedTools", ALLOWED_TOOLS,
-    "--max-turns", MAX_TURNS,
+    "--max-turns", getMaxTurns(),
   ];
   if (sessionId) {
     args.push("--resume", sessionId);
@@ -55,14 +59,14 @@ export async function callClaude(
 
   let stdout: string;
   try {
-    stdout = await exec(args, TIMEOUT_MS);
+    stdout = await exec(args, getTimeoutMs());
   } catch (firstErr: unknown) {
     // タイムアウト時のみ 1 回リトライ
     const isTimeout =
       firstErr instanceof Error && "killed" in firstErr && (firstErr as { killed: boolean }).killed;
     if (!isTimeout) throw firstErr;
 
-    stdout = await exec(args, TIMEOUT_MS);
+    stdout = await exec(args, getTimeoutMs());
   }
 
   return parseResponse(stdout);
