@@ -2,10 +2,11 @@ import type { ChatInputCommandInteraction } from "discord.js";
 import type { SessionManager } from "../session.js";
 import type { JobQueue } from "../queue.js";
 import { callClaude } from "../claude.js";
+import { buildPromptRow } from "../buttons.js";
 
 async function safeEditReply(
   interaction: ChatInputCommandInteraction,
-  content: string,
+  content: string | Parameters<typeof interaction.editReply>[0],
 ): Promise<void> {
   try {
     await interaction.editReply(content);
@@ -28,7 +29,7 @@ function buildOnboardingMessage(): string {
     "",
     "⚠️ 機微情報（マイナンバー等）はこのチャンネルに送信しないでください。",
     "",
-    "ファイルを配置したら「読み取って」と話しかけてください。",
+    "ファイルを配置済みであれば、読み取りを開始しますか？",
   ].join("\n");
 }
 
@@ -55,7 +56,11 @@ export async function handleStart(
         sessionManager.set(result.sessionId);
       }
 
-      await safeEditReply(interaction, buildOnboardingMessage());
+      const row = buildPromptRow("読み取って");
+      await safeEditReply(interaction, {
+        content: buildOnboardingMessage(),
+        components: row ? [row] : [],
+      });
     });
   } catch (err: unknown) {
     const isQueueFull =
