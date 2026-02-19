@@ -42,6 +42,7 @@ async function handleMessage(
   if (!channel.isSendable()) return;
 
   try {
+    console.log(`[bot] message from ${message.author.username}: ${message.content.slice(0, 100)}`);
     await channel.sendTyping();
     await jobQueue.enqueue(async () => {
       const sessionId = sessionManager.get();
@@ -98,6 +99,7 @@ async function handleInteraction(
     return;
   }
 
+  console.log(`[bot] command /${interaction.commandName} from ${interaction.user.username}`);
   switch (interaction.commandName) {
     case "start":
       await handleStart(interaction, sessionManager, jobQueue);

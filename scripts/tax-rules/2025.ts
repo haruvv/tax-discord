@@ -1,15 +1,23 @@
 import type { TaxRules } from "./types.js";
 
+// 給与所得控除（令和7年分以降）
+// https://www.nta.go.jp/taxes/shiraberu/taxanswer/shotoku/1410.htm
 function calcSalaryDeduction(revenue: number): number {
-  if (revenue <= 1_625_000) return 550_000;
-  if (revenue <= 1_800_000) return Math.floor(revenue * 0.4 - 100_000);
+  if (revenue <= 1_900_000) return 650_000;
   if (revenue <= 3_600_000) return Math.floor(revenue * 0.3 + 80_000);
   if (revenue <= 6_600_000) return Math.floor(revenue * 0.2 + 440_000);
   if (revenue <= 8_500_000) return Math.floor(revenue * 0.1 + 1_100_000);
   return 1_950_000;
 }
 
+// 基礎控除（令和7年分）— 基礎控除の特例を含む
+// https://www.nta.go.jp/users/gensen/2025kiso/index.htm
 function calcBasicDeduction(totalIncome: number): number {
+  if (totalIncome <= 1_320_000) return 950_000;
+  if (totalIncome <= 3_360_000) return 880_000;
+  if (totalIncome <= 4_890_000) return 680_000;
+  if (totalIncome <= 6_550_000) return 630_000;
+  if (totalIncome <= 23_500_000) return 580_000;
   if (totalIncome <= 24_000_000) return 480_000;
   if (totalIncome <= 24_500_000) return 320_000;
   if (totalIncome <= 25_000_000) return 160_000;

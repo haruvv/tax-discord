@@ -9,3 +9,24 @@ export interface TaxRules {
     reconstructionTax: (x: number) => number;
   };
 }
+
+export interface IncomeEntry {
+  type: string;
+  amount: number;
+  withholding_tax?: number;
+  social_insurance?: number;
+  expenses?: number;
+}
+
+export interface IncomeDetail {
+  type: string;
+  revenue: number;
+  deduction_amount: number;
+  deduction_label: string;
+  income_amount: number;
+}
+
+export type IncomeCalculator = (
+  entries: IncomeEntry[],
+  rules: TaxRules,
+) => IncomeDetail[];

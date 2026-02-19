@@ -56,6 +56,9 @@ export async function callClaude(
   sessionId?: string,
 ): Promise<ClaudeResult> {
   const args = buildArgs(message, sessionId);
+  const preview = message.length > 80 ? message.slice(0, 80) + "…" : message;
+  console.log(`[claude] >>> ${preview}${sessionId ? ` (session: ${sessionId.slice(0, 8)}…)` : ""}`);
+  const start = Date.now();
 
   let stdout: string;
   try {
@@ -66,8 +69,14 @@ export async function callClaude(
       firstErr instanceof Error && "killed" in firstErr && (firstErr as { killed: boolean }).killed;
     if (!isTimeout) throw firstErr;
 
+    console.log(`[claude] timeout after ${Date.now() - start}ms, retrying...`);
     stdout = await exec(args, getTimeoutMs());
   }
 
-  return parseResponse(stdout);
+  const elapsed = Date.now() - start;
+  const result = parseResponse(stdout);
+  const resPreview = result.text.length > 100 ? result.text.slice(0, 100) + "…" : result.text;
+  console.log(`[claude] <<< ${elapsed}ms | ${result.text.length} chars | ${resPreview}`);
+
+  return result;
 }

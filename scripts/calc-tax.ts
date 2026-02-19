@@ -1,5 +1,8 @@
 import { rules2025 } from "./tax-rules/2025.js";
-import type { TaxRules } from "./tax-rules/types.js";
+import type { IncomeCalculator, IncomeDetail, IncomeEntry, TaxRules } from "./tax-rules/types.js";
+import { calcSalaryIncome } from "./tax-rules/income/salary.js";
+import { calcMiscIncome } from "./tax-rules/income/misc.js";
+import { calcTemporaryIncome } from "./tax-rules/income/temporary.js";
 
 // --- ルールレジストリ ---
 const RULES_BY_YEAR: Record<number, TaxRules> = {
@@ -104,93 +107,44 @@ function fmt(n: number): string {
   return n.toLocaleString("en-US");
 }
 
+// --- 所得種類別 calculator レジストリ ---
+const INCOME_CALCULATORS: Record<string, IncomeCalculator> = {
+  "給与所得": calcSalaryIncome,
+  "雑所得": calcMiscIncome,
+  "一時所得": calcTemporaryIncome,
+};
+
 // --- 所得金額計算 ---
 function calcIncomeDetails(
   input: CalcTaxInput,
   rules: TaxRules,
 ): CalcTaxOutput["income_details"] {
-  // 給与所得控除は合算収入に対して1回適用し、按分する
-  const salaryEntries = input.income.filter((e) => e.type === "給与所得");
-  const totalSalaryRevenue = salaryEntries.reduce((sum, e) => sum + e.amount, 0);
-  const totalSalaryDeduction = totalSalaryRevenue > 0
-    ? rules.calcSalaryDeduction(totalSalaryRevenue)
-    : 0;
+  // 入力エントリを type でグループ化（元の順序インデックスを保持）
+  const groups = new Map<string, { index: number; entry: IncomeEntry }[]>();
+  for (let i = 0; i < input.income.length; i++) {
+    const entry = input.income[i];
+    const group = groups.get(entry.type) ?? [];
+    group.push({ index: i, entry });
+    groups.set(entry.type, group);
+  }
 
-  // 按分時の端数消失を防ぐ: 最後のエントリに残余を加算
-  let salaryDeductionAssigned = 0;
-  let salaryIndex = 0;
-
-  const details = input.income.map((entry) => {
-    const revenue = entry.amount;
-    let deductionAmount: number;
-    let deductionLabel: string;
-
-    if (entry.type === "給与所得") {
-      salaryIndex++;
-      if (salaryEntries.length === 1 || totalSalaryRevenue === 0) {
-        deductionAmount = totalSalaryDeduction;
-      } else if (salaryIndex === salaryEntries.length) {
-        // 最後のエントリに残余を割り当て
-        deductionAmount = totalSalaryDeduction - salaryDeductionAssigned;
-      } else {
-        deductionAmount = Math.floor(totalSalaryDeduction * (revenue / totalSalaryRevenue));
-        salaryDeductionAssigned += deductionAmount;
-      }
-      deductionLabel = "給与所得控除";
-    } else {
-      // 雑所得・一時所得: 経費が控除
-      deductionAmount = entry.expenses ?? 0;
-      deductionLabel = "必要経費";
+  // 各グループを対応する calculator に渡す
+  const results: { index: number; detail: IncomeDetail }[] = [];
+  for (const [type, items] of groups) {
+    const calculator = INCOME_CALCULATORS[type];
+    if (!calculator) {
+      throw new Error(`未対応の所得種類: ${type}`);
     }
-
-    const incomeAmount = Math.max(0, revenue - deductionAmount);
-    return {
-      type: entry.type,
-      revenue,
-      deduction_amount: deductionAmount,
-      deduction_label: deductionLabel,
-      income_amount: incomeAmount,
-    };
-  });
-
-  // 一時所得: 特別控除50万を年間合計に1回適用 + 1/2課税
-  // clamping 前の net 値 (revenue - expenses) を使って合計する
-  const tempEntries = details.filter((d) => d.type === "一時所得");
-  if (tempEntries.length > 0) {
-    const rawNets = tempEntries.map((d) => d.revenue - d.deduction_amount);
-    const totalRawNet = rawNets.reduce((s, n) => s + n, 0);
-    const adjustedTotal = Math.max(0, totalRawNet - 500_000) / 2;
-
-    if (adjustedTotal === 0 || totalRawNet <= 0) {
-      for (const entry of tempEntries) {
-        entry.income_amount = 0;
-      }
-    } else {
-      // 正の net を持つエントリに按分（残余は最後の黒字エントリへ）
-      const positiveNets = rawNets.map((n) => Math.max(0, n));
-      const totalPositive = positiveNets.reduce((s, n) => s + n, 0);
-      let lastPositiveIdx = -1;
-      for (let j = tempEntries.length - 1; j >= 0; j--) {
-        if (positiveNets[j] > 0) { lastPositiveIdx = j; break; }
-      }
-      let assigned = 0;
-      for (let i = 0; i < tempEntries.length; i++) {
-        if (totalPositive > 0 && positiveNets[i] > 0) {
-          if (i === lastPositiveIdx) {
-            tempEntries[i].income_amount = Math.floor(adjustedTotal) - assigned;
-          } else {
-            const share = Math.floor(adjustedTotal * (positiveNets[i] / totalPositive));
-            tempEntries[i].income_amount = share;
-            assigned += share;
-          }
-        } else {
-          tempEntries[i].income_amount = 0;
-        }
-      }
+    const entries = items.map((item) => item.entry);
+    const details = calculator(entries, rules);
+    for (let j = 0; j < items.length; j++) {
+      results.push({ index: items[j].index, detail: details[j] });
     }
   }
 
-  return details;
+  // 元の順序で再構成
+  results.sort((a, b) => a.index - b.index);
+  return results.map((r) => r.detail);
 }
 
 // --- breakdown 生成 ---
