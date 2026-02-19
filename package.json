@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsc"
+    "build": "tsc",
+    "test": "vitest run"
   },
   "dependencies": {
     "discord.js": "^14",
@@ -13,6 +14,7 @@
   "devDependencies": {
     "typescript": "^5",
     "tsx": "^4",
-    "@types/node": "^20"
+    "@types/node": "^20",
+    "vitest": "^3"
   }
 }

@@ -656,9 +656,9 @@ SESSION_STATE_PATH=.state/session.json
 
 | # | 検証内容 | 手順 |
 |---|---------|------|
-| 1 | Bot 起動・基本応答 | `npm run dev` → Bot 起動 → Discord で「こんにちは」→ Claude 応答が返る |
+| 1 | Bot 起動・基本応答 | `pnpm dev` → Bot 起動 → Discord で「こんにちは」→ Claude 応答が返る |
 | 2 | ファイル読み取り | `${TAX_DOCS_ROOT}/${TAX_YEAR}/income/` にテスト PDF → 「読み取って」→ 読み取り結果表示 |
-| 3 | 税額計算スクリプト | `echo '{"tax_year":2025,...}' \| npx tsx scripts/calc-tax.ts` → 正しい計算結果 |
+| 3 | 税額計算スクリプト | `echo '{"tax_year":2025,...}' \| pnpm tsx scripts/calc-tax.ts` → 正しい計算結果 |
 | 4 | /start コマンド | /start → オンボーディングメッセージ表示 |
 | 5 | /status コマンド | /status → チェックリスト表示 |
 | 6 | サマリ生成 | 「サマリ作って」→ calc-tax.ts 実行 → サマリ + ファイル出力 |
