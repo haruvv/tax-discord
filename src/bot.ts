@@ -9,6 +9,7 @@ import { JobQueue } from "./queue.js";
 import { callClaude } from "./claude.js";
 import { splitMessage } from "./splitter.js";
 import { handleStart } from "./commands/start.js";
+import { handleStatus } from "./commands/status.js";
 
 function getChannelId(): string {
   return process.env.DISCORD_CHANNEL_ID ?? "";
@@ -100,6 +101,9 @@ async function handleInteraction(
   switch (interaction.commandName) {
     case "start":
       await handleStart(interaction, sessionManager, jobQueue);
+      break;
+    case "status":
+      await handleStatus(interaction);
       break;
     default:
       await interaction.reply({
