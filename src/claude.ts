@@ -1,9 +1,19 @@
-import { execFile } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import type { ClaudeResponse } from "./types.js";
 
 export interface ClaudeResult {
   text: string;
   sessionId: string;
+}
+
+// 実行中の子プロセスを追跡
+const activeChildren = new Set<ChildProcess>();
+
+export function killAll(): void {
+  for (const child of activeChildren) {
+    child.kill();
+  }
+  activeChildren.clear();
 }
 
 function getTimeoutMs(): number {
@@ -15,13 +25,17 @@ function getMaxTurns(): string {
 const ALLOWED_TOOLS =
   'Read,Glob,Grep,Write,Bash(npx tsx scripts/calc-tax.ts *)';
 
-function buildArgs(message: string, sessionId?: string): string[] {
+export interface CallClaudeOptions {
+  maxTurns?: number;
+}
+
+function buildArgs(message: string, sessionId?: string, options?: CallClaudeOptions): string[] {
   const args = [
     "-p", message,
     "--output-format", "json",
     "--append-system-prompt-file", "CLAUDE.md",
     "--allowedTools", ALLOWED_TOOLS,
-    "--max-turns", getMaxTurns(),
+    "--max-turns", String(options?.maxTurns ?? Number(getMaxTurns())),
   ];
   if (sessionId) {
     args.push("--resume", sessionId);
@@ -31,9 +45,28 @@ function buildArgs(message: string, sessionId?: string): string[] {
 
 function exec(args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    execFile("claude", args, { timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 }, (err, stdout) => {
-      if (err) {
-        reject(err);
+    const child = spawn("claude", args, { stdio: ["ignore", "pipe", "pipe"], shell: true });
+    activeChildren.add(child);
+
+    console.log(`[claude] spawned pid=${child.pid}`);
+
+    const stdoutChunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => stdoutChunks.push(chunk));
+    child.stderr.on("data", (chunk: Buffer) => {
+      process.stderr.write(`[claude:stderr] ${chunk.toString()}`);
+    });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`claude process timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      activeChildren.delete(child);
+      const stdout = Buffer.concat(stdoutChunks).toString("utf-8");
+      if (code !== 0) {
+        reject(new Error(`claude exited with code ${code}\n${stdout}`));
         return;
       }
       resolve(stdout);
@@ -44,7 +77,7 @@ function exec(args: string[], timeoutMs: number): Promise<string> {
 function parseResponse(stdout: string): ClaudeResult {
   try {
     const json = JSON.parse(stdout) as ClaudeResponse;
-    return { text: json.result, sessionId: json.session_id };
+    return { text: json.result ?? "", sessionId: json.session_id ?? "" };
   } catch {
     // JSON パース失敗: stdout をそのままテキストとして返す
     return { text: stdout.trim(), sessionId: "" };
@@ -54,24 +87,16 @@ function parseResponse(stdout: string): ClaudeResult {
 export async function callClaude(
   message: string,
   sessionId?: string,
+  options?: CallClaudeOptions,
 ): Promise<ClaudeResult> {
-  const args = buildArgs(message, sessionId);
+  const args = buildArgs(message, sessionId, options);
   const preview = message.length > 80 ? message.slice(0, 80) + "…" : message;
+  const timeoutMs = getTimeoutMs();
   console.log(`[claude] >>> ${preview}${sessionId ? ` (session: ${sessionId.slice(0, 8)}…)` : ""}`);
+  console.log(`[claude] timeout=${timeoutMs}ms, max-turns=${getMaxTurns()}, args=${JSON.stringify(args)}`);
   const start = Date.now();
 
-  let stdout: string;
-  try {
-    stdout = await exec(args, getTimeoutMs());
-  } catch (firstErr: unknown) {
-    // タイムアウト時のみ 1 回リトライ
-    const isTimeout =
-      firstErr instanceof Error && "killed" in firstErr && (firstErr as { killed: boolean }).killed;
-    if (!isTimeout) throw firstErr;
-
-    console.log(`[claude] timeout after ${Date.now() - start}ms, retrying...`);
-    stdout = await exec(args, getTimeoutMs());
-  }
+  const stdout = await exec(args, getTimeoutMs());
 
   const elapsed = Date.now() - start;
   const result = parseResponse(stdout);

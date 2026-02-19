@@ -44,9 +44,11 @@ export async function handleStart(
       // 既存セッションをクリア
       sessionManager.delete();
 
-      // Claude を呼び出して新規セッション ID を取得
+      // Claude を呼び出して新規セッション ID を取得（初回はツール不要なので1ターン）
       const result = await callClaude(
         "確定申告サポートセッションを開始します。準備完了を確認してください。",
+        undefined,
+        { maxTurns: 1 },
       );
 
       if (result.sessionId) {

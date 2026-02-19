@@ -6,6 +6,7 @@ import { SessionManager } from "./session.js";
 import { JobQueue } from "./queue.js";
 import { registerCommands } from "./commands/register.js";
 import { setupMessageHandler, setupInteractionHandler } from "./bot.js";
+import { killAll as killAllClaude } from "./claude.js";
 
 // 1. .env をロード
 config();
@@ -65,6 +66,17 @@ if (!token) {
   process.exit(1);
 }
 
+// 10. シャットダウン処理
+function shutdown(): void {
+  console.log("\n[init] Shutting down...");
+  killAllClaude();
+  client.destroy();
+  process.exit(0);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
+// 11. スラッシュコマンド登録 + ログイン
 client.login(token).then(async () => {
   console.log("[init] Discord client logged in");
   await registerCommands(client);
