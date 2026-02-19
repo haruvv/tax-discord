@@ -20,10 +20,10 @@ function getTimeoutMs(): number {
   return Number(process.env.CLAUDE_TIMEOUT_MS) || 90_000;
 }
 function getMaxTurns(): string {
-  return process.env.CLAUDE_MAX_TURNS ?? "10";
+  return process.env.CLAUDE_MAX_TURNS ?? "25";
 }
 const ALLOWED_TOOLS =
-  'Read,Glob,Grep,Write,Bash(npx tsx scripts/calc-tax.ts *)';
+  'Read,Glob,Grep,Write,Bash(echo * | pnpm tsx scripts/calc-tax.ts),Bash(mkdir -p *)';
 
 export interface CallClaudeOptions {
   maxTurns?: number;
@@ -45,7 +45,7 @@ function buildArgs(message: string, sessionId?: string, options?: CallClaudeOpti
 
 function exec(args: string[], timeoutMs: number): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn("claude", args, { stdio: ["ignore", "pipe", "pipe"], shell: true });
+    const child = spawn("claude", args, { stdio: ["ignore", "pipe", "pipe"] });
     activeChildren.add(child);
 
     console.log(`[claude] spawned pid=${child.pid}`);
@@ -61,6 +61,12 @@ function exec(args: string[], timeoutMs: number): Promise<string> {
       reject(new Error(`claude process timed out after ${timeoutMs}ms`));
     }, timeoutMs);
 
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      activeChildren.delete(child);
+      reject(new Error(`claude spawn error: ${err.message}`));
+    });
+
     child.on("close", (code) => {
       clearTimeout(timer);
       activeChildren.delete(child);
@@ -75,12 +81,34 @@ function exec(args: string[], timeoutMs: number): Promise<string> {
 }
 
 function parseResponse(stdout: string): ClaudeResult {
+  // Claude CLI は NDJSON（1行1JSONオブジェクト）を出力することがある
+  // 最後の result 行を探す
+  const lines = stdout.trim().split("\n");
+  for (let i = lines.length - 1; i >= 0; i--) {
+    try {
+      const json = JSON.parse(lines[i]) as Record<string, unknown>;
+      if (json.type === "result" || json.result !== undefined) {
+        const text = json.result
+          ? String(json.result)
+          : json.subtype === "error_max_turns"
+            ? "処理のステップ数が上限に達しました。「続けて」と送信してください。"
+            : "";
+        return {
+          text,
+          sessionId: String(json.session_id ?? ""),
+        };
+      }
+    } catch {
+      // この行はJSONではない、次を試す
+    }
+  }
+
+  // 単一JSON（NDJSON でない場合）
   try {
     const json = JSON.parse(stdout) as ClaudeResponse;
-    return { text: json.result ?? "", sessionId: json.session_id ?? "" };
+    return { text: String(json.result ?? ""), sessionId: String(json.session_id ?? "") };
   } catch {
-    // JSON パース失敗: stdout をそのままテキストとして返す
-    return { text: stdout.trim(), sessionId: "" };
+    return { text: stdout.trim() || "(応答なし)", sessionId: "" };
   }
 }
 
@@ -99,9 +127,11 @@ export async function callClaude(
   const stdout = await exec(args, getTimeoutMs());
 
   const elapsed = Date.now() - start;
+  console.log(`[claude:raw] ${stdout.length} bytes, first 500: ${stdout.slice(0, 500)}`);
   const result = parseResponse(stdout);
-  const resPreview = result.text.length > 100 ? result.text.slice(0, 100) + "…" : result.text;
-  console.log(`[claude] <<< ${elapsed}ms | ${result.text.length} chars | ${resPreview}`);
+  const text = result.text ?? "";
+  const resPreview = text.length > 100 ? text.slice(0, 100) + "…" : text;
+  console.log(`[claude] <<< ${elapsed}ms | ${text.length} chars | ${resPreview}`);
 
   return result;
 }

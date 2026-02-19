@@ -17,16 +17,16 @@ deductions/ — 控除証明書
 ## ワークフロー
 1. ユーザーの指示でフォルダをスキャン（Glob → Read）
 2. 読み取り結果を報告し、各金額をユーザーに確認
-3. 確認済みデータを data/tax_data.json に Write で保存
+3. 確認済みデータを \${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/tax_data.json に Write で保存
 4. 不足情報があればユーザーに質問
 5. 「サマリ作って」等の指示で:
-   a. tax_data.json から CalcTaxInput を構成
-   b. Bash で \`npx tsx scripts/calc-tax.ts\` を実行（stdin に JSON を渡す）
+   a. \${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/tax_data.json から CalcTaxInput を構成
+   b. Bash で \`echo '<JSON>' | pnpm tsx scripts/calc-tax.ts\` を実行（必ずこの形式で）
    c. 計算結果を使ってサマリ文章を生成
-   d. output/summary.txt と output/summary.json を Write で出力
+   d. \${TAX_DOCS_ROOT}/\${TAX_YEAR}/output/summary.txt と \${TAX_DOCS_ROOT}/\${TAX_YEAR}/output/summary.json を Write で出力
 
 ## ルール
-- 金額は必ずユーザーに確認してから tax_data.json に書き込む
+- 金額は必ずユーザーに確認してから \${TAX_DOCS_ROOT}/\${TAX_YEAR}/data/tax_data.json に書き込む
 - 不明な点は推測せず質問する
 - 税額計算は自分で行わず、必ず calc-tax.ts の結果を使う
 - 税額の表示時は breakdown（計算根拠）を併記する

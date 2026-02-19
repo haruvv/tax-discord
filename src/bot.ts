@@ -52,7 +52,8 @@ async function handleMessage(
         sessionManager.set(result.sessionId);
       }
 
-      const chunks = splitMessage(result.text);
+      const text = result.text || "(Claude からの応答が空でした)";
+      const chunks = splitMessage(text);
       for (const chunk of chunks) {
         await channel.send(chunk);
       }
