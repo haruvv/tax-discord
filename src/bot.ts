@@ -8,6 +8,7 @@ import { SessionManager } from "./session.js";
 import { JobQueue } from "./queue.js";
 import { callClaude } from "./claude.js";
 import { splitMessage } from "./splitter.js";
+import { handleStart } from "./commands/start.js";
 
 function getChannelId(): string {
   return process.env.DISCORD_CHANNEL_ID ?? "";
@@ -85,10 +86,10 @@ export function setupInteractionHandler(
 
 async function handleInteraction(
   interaction: ChatInputCommandInteraction,
-  _sessionManager: SessionManager,
-  _jobQueue: JobQueue,
+  sessionManager: SessionManager,
+  jobQueue: JobQueue,
 ): Promise<void> {
-  if (interaction.user.id !== getOwnerId()) {
+  if (interaction.user.id !== getOwnerId() || interaction.channelId !== getChannelId()) {
     await interaction.reply({
       content: "このコマンドは使用できません。",
       ephemeral: true,
@@ -96,8 +97,10 @@ async function handleInteraction(
     return;
   }
 
-  // コマンドルーティング（commands/ 実装後に追加）
   switch (interaction.commandName) {
+    case "start":
+      await handleStart(interaction, sessionManager, jobQueue);
+      break;
     default:
       await interaction.reply({
         content: `不明なコマンド: /${interaction.commandName}`,
