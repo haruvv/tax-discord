@@ -49,7 +49,7 @@ export function buildConfirmRow(): ActionRowBuilder<ButtonBuilder> {
 const MAX_CUSTOM_ID_LEN = 100;
 
 /** はい(→action送信) / いいえ(→無視) / その他(→モーダル) のボタン行
- *  action が customId 上限を超える場合は null を返す（呼び出し側でフォールバック） */
+ *  action が customId 上限を超える場合は null を返す（呼び出し側でプレーンテキスト送信） */
 export function buildPromptRow(action: string): ActionRowBuilder<ButtonBuilder> | null {
   const customId = `${ACTION_PREFIX}${action}`;
   if (customId.length > MAX_CUSTOM_ID_LEN) {

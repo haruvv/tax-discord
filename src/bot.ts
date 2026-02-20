@@ -14,13 +14,9 @@ import { splitMessage } from "./splitter.js";
 import { handleStart } from "./commands/start.js";
 import { handleStatus } from "./commands/status.js";
 import {
-  isConfirmation,
   extractPromptedAction,
-  buildConfirmRow,
   buildPromptRow,
   buildFreeInputModal,
-  BUTTON_YES,
-  BUTTON_NO,
   BUTTON_OTHER,
   BUTTON_DISMISS,
   MODAL_ID,
@@ -56,7 +52,7 @@ async function sendClaudeResponse(
       await channel.send(chunks[i]);
       continue;
     }
-    // 「〜」と送ってください → はい(=アクション)/いいえ/その他（確認より優先）
+    // 「〜」と送ってください → はい(=アクション)/いいえ/その他
     const action = extractPromptedAction(chunks[i]);
     if (action) {
       const row = buildPromptRow(action);
@@ -67,15 +63,6 @@ async function sendClaudeResponse(
         });
         continue;
       }
-      // action が長すぎて customId に収まらない → 確認ボタンにフォールバック
-    }
-    // 最終チャンク: 確認パターン → はい/いいえ/その他
-    if (isConfirmation(chunks[i])) {
-      await channel.send({
-        content: chunks[i],
-        components: [buildConfirmRow()],
-      });
-      continue;
     }
     await channel.send(chunks[i]);
   }
@@ -205,12 +192,12 @@ async function handleButton(
     return;
   }
 
-  const isAction = interaction.customId.startsWith(ACTION_PREFIX);
-  const label = isAction
-    ? interaction.customId.slice(ACTION_PREFIX.length)
-    : interaction.customId === BUTTON_NO
-      ? "いいえ"
-      : "はい"; // BUTTON_YES
+  // レガシー確認ボタン（デプロイ前の残存メッセージ）は無視してボタンを除去
+  if (!interaction.customId.startsWith(ACTION_PREFIX)) {
+    await interaction.update({ components: [] });
+    return;
+  }
+  const label = interaction.customId.slice(ACTION_PREFIX.length);
 
   try {
     // deferUpdate → 即座にボタンを除去（二重押し防止）
@@ -225,10 +212,10 @@ async function handleButton(
       err instanceof Error && err.message.includes("Queue is full");
     if (isQueueFull) {
       // キュー満杯: 元のボタンを復元して再試行可能にする
-      const restoreRow = isAction
-        ? buildPromptRow(label) ?? buildConfirmRow()
-        : buildConfirmRow();
-      await interaction.editReply({ components: [restoreRow] });
+      const restoreRow = buildPromptRow(label);
+      if (restoreRow) {
+        await interaction.editReply({ components: [restoreRow] });
+      }
     }
     const text = isQueueFull
       ? "現在処理中です。しばらくお待ちください。"
