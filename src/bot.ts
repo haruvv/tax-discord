@@ -7,11 +7,13 @@ import {
   type ModalSubmitInteraction,
   type SendableChannels,
 } from "discord.js";
-import { SessionManager } from "./session.js";
+import { UserContext } from "./user-context.js";
+import type { SessionManager } from "./session.js";
 import { JobQueue } from "./queue.js";
 import { callClaude } from "./claude.js";
+import { generateClaudeMd } from "./claude-md.js";
 import { splitMessage } from "./splitter.js";
-import { handleStart } from "./commands/start.js";
+import { handleStart, handleUserSelect } from "./commands/start.js";
 import { handleStatus } from "./commands/status.js";
 import {
   extractPromptedAction,
@@ -22,6 +24,7 @@ import {
   MODAL_ID,
   MODAL_FIELD,
   ACTION_PREFIX,
+  USER_PREFIX,
 } from "./buttons.js";
 
 function getChannelId(): string {
@@ -31,12 +34,18 @@ function getOwnerId(): string {
   return process.env.DISCORD_OWNER_USER_ID ?? "";
 }
 
+const NO_USER_MSG =
+  "アクティブなユーザーがいません。`/start` で開始してください。";
+
 /** Claude を呼んで応答チャンクを送信する共通処理 */
 async function sendClaudeResponse(
   userText: string,
   channel: SendableChannels,
   sessionManager: SessionManager,
+  username: string,
 ): Promise<void> {
+  // キュー実行時に CLAUDE.md を再生成し、セッションとプロンプトの整合性を保証する
+  generateClaudeMd("CLAUDE.md", username);
   const sessionId = sessionManager.get();
   const result = await callClaude(userText, sessionId);
 
@@ -70,17 +79,17 @@ async function sendClaudeResponse(
 
 export function setupMessageHandler(
   client: Client,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): void {
   client.on(Events.MessageCreate, (message: Message) => {
-    void handleMessage(message, sessionManager, jobQueue);
+    void handleMessage(message, userContext, jobQueue);
   });
 }
 
 async function handleMessage(
   message: Message,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): Promise<void> {
   // フィルタ
@@ -91,11 +100,19 @@ async function handleMessage(
   const channel = message.channel;
   if (!channel.isSendable()) return;
 
+  // アクティブユーザー未設定ガード
+  if (!userContext.getActiveUser()) {
+    await channel.send(NO_USER_MSG);
+    return;
+  }
+
   try {
     console.log(`[bot] message from ${message.author.username}: ${message.content.slice(0, 100)}`);
+    const activeUser = userContext.getActiveUser()!;
+    const sm = userContext.getSessionManager();
     await channel.sendTyping();
     await jobQueue.enqueue(async () => {
-      await sendClaudeResponse(message.content, channel, sessionManager);
+      await sendClaudeResponse(message.content, channel, sm, activeUser);
     });
   } catch (err: unknown) {
     const isQueueFull =
@@ -113,26 +130,26 @@ async function handleMessage(
 
 export function setupInteractionHandler(
   client: Client,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): void {
   client.on(Events.InteractionCreate, (interaction) => {
     if (interaction.isChatInputCommand()) {
       void handleInteraction(
         interaction as ChatInputCommandInteraction,
-        sessionManager,
+        userContext,
         jobQueue,
       );
     } else if (interaction.isButton()) {
       void handleButton(
         interaction as ButtonInteraction,
-        sessionManager,
+        userContext,
         jobQueue,
       );
     } else if (interaction.isModalSubmit()) {
       void handleModalSubmit(
         interaction as ModalSubmitInteraction,
-        sessionManager,
+        userContext,
         jobQueue,
       );
     }
@@ -141,7 +158,7 @@ export function setupInteractionHandler(
 
 async function handleInteraction(
   interaction: ChatInputCommandInteraction,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): Promise<void> {
   if (interaction.user.id !== getOwnerId() || interaction.channelId !== getChannelId()) {
@@ -155,10 +172,10 @@ async function handleInteraction(
   console.log(`[bot] command /${interaction.commandName} from ${interaction.user.username}`);
   switch (interaction.commandName) {
     case "start":
-      await handleStart(interaction, sessionManager, jobQueue);
+      await handleStart(interaction);
       break;
     case "status":
-      await handleStatus(interaction);
+      await handleStatus(interaction, userContext);
       break;
     default:
       await interaction.reply({
@@ -170,7 +187,7 @@ async function handleInteraction(
 
 async function handleButton(
   interaction: ButtonInteraction,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): Promise<void> {
   if (interaction.user.id !== getOwnerId() || interaction.channelId !== getChannelId()) {
@@ -180,6 +197,19 @@ async function handleButton(
 
   const channel = interaction.channel;
   if (!channel?.isSendable()) return;
+
+  // ユーザー選択ボタン（アクティブユーザー設定前なのでガードより先に処理）
+  if (interaction.customId.startsWith(USER_PREFIX)) {
+    const username = interaction.customId.slice(USER_PREFIX.length);
+    await handleUserSelect(interaction, userContext, jobQueue, username);
+    return;
+  }
+
+  // アクティブユーザー未設定ガード
+  if (!userContext.getActiveUser()) {
+    await interaction.reply({ content: NO_USER_MSG, ephemeral: true });
+    return;
+  }
 
   if (interaction.customId === BUTTON_OTHER) {
     await interaction.showModal(buildFreeInputModal());
@@ -200,12 +230,14 @@ async function handleButton(
   const label = interaction.customId.slice(ACTION_PREFIX.length);
 
   try {
+    const activeUser = userContext.getActiveUser()!;
+    const sm = userContext.getSessionManager();
     // deferUpdate → 即座にボタンを除去（二重押し防止）
     await interaction.deferUpdate();
     await interaction.editReply({ components: [] });
     await channel.sendTyping();
     await jobQueue.enqueue(async () => {
-      await sendClaudeResponse(label, channel, sessionManager);
+      await sendClaudeResponse(label, channel, sm, activeUser);
     });
   } catch (err: unknown) {
     const isQueueFull =
@@ -229,7 +261,7 @@ async function handleButton(
 
 async function handleModalSubmit(
   interaction: ModalSubmitInteraction,
-  sessionManager: SessionManager,
+  userContext: UserContext,
   jobQueue: JobQueue,
 ): Promise<void> {
   if (interaction.customId !== MODAL_ID) return;
@@ -238,9 +270,18 @@ async function handleModalSubmit(
     return;
   }
 
-  const userInput = interaction.fields.getTextInputValue(MODAL_FIELD);
   const channel = interaction.channel;
   if (!channel?.isSendable()) return;
+
+  // アクティブユーザー未設定ガード
+  if (!userContext.getActiveUser()) {
+    await interaction.reply({ content: NO_USER_MSG, ephemeral: true });
+    return;
+  }
+
+  const activeUser = userContext.getActiveUser()!;
+  const sm = userContext.getSessionManager();
+  const userInput = interaction.fields.getTextInputValue(MODAL_FIELD);
 
   // 元メッセージのボタン行を記憶（キュー満杯時の復元用）
   const originalComponents = interaction.message?.components ?? [];
@@ -258,7 +299,7 @@ async function handleModalSubmit(
   try {
     await channel.sendTyping();
     await jobQueue.enqueue(async () => {
-      await sendClaudeResponse(userInput, channel, sessionManager);
+      await sendClaudeResponse(userInput, channel, sm, activeUser);
     });
   } catch (err: unknown) {
     const isQueueFull =

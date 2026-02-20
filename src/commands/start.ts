@@ -1,28 +1,19 @@
-import type { ChatInputCommandInteraction } from "discord.js";
-import type { SessionManager } from "../session.js";
+import type { ChatInputCommandInteraction, ButtonInteraction } from "discord.js";
+import type { UserContext } from "../user-context.js";
 import type { JobQueue } from "../queue.js";
 import { callClaude } from "../claude.js";
-import { buildPromptRow } from "../buttons.js";
+import { buildPromptRow, buildUserSelectRow } from "../buttons.js";
 
-async function safeEditReply(
-  interaction: ChatInputCommandInteraction,
-  content: string | Parameters<typeof interaction.editReply>[0],
-): Promise<void> {
-  try {
-    await interaction.editReply(content);
-  } catch {
-    console.warn("[start] Interaction token expired, could not reply");
-  }
-}
-
-function buildOnboardingMessage(): string {
+function buildOnboardingMessage(username: string): string {
   const taxYear = process.env.TAX_YEAR ?? "2025";
   const taxDocsRoot = process.env.TAX_DOCS_ROOT ?? "~/tax-docs";
+  const userBase = `${taxDocsRoot}/${taxYear}/${username}`;
 
   return [
     `📋 確定申告サポートを開始します（${taxYear}年分・白色申告）`,
+    `👤 ユーザー: ${username}`,
     "",
-    `📁 入力フォルダ: ${taxDocsRoot}/${taxYear}/`,
+    `📁 入力フォルダ: ${userBase}/`,
     "   income/     ← 源泉徴収票など",
     "   expenses/   ← 経費一覧CSVなど",
     "   deductions/ ← 控除証明書など",
@@ -35,17 +26,48 @@ function buildOnboardingMessage(): string {
 
 export async function handleStart(
   interaction: ChatInputCommandInteraction,
-  sessionManager: SessionManager,
-  jobQueue: JobQueue,
 ): Promise<void> {
-  await interaction.deferReply();
+  const usersEnv = process.env.USERS;
+  if (!usersEnv) {
+    await interaction.reply({
+      content: "環境変数 `USERS` が設定されていません。",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const users = usersEnv.split(",").map((u) => u.trim()).filter(Boolean);
+  if (users.length === 0) {
+    await interaction.reply({
+      content: "環境変数 `USERS` にユーザーが定義されていません。",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  const row = buildUserSelectRow(users);
+  await interaction.reply({
+    content: "ユーザーを選択してください:",
+    components: [row],
+  });
+}
+
+export async function handleUserSelect(
+  interaction: ButtonInteraction,
+  userContext: UserContext,
+  jobQueue: JobQueue,
+  username: string,
+): Promise<void> {
+  await interaction.deferUpdate();
+  await interaction.editReply({ content: `${username} で開始しています…`, components: [] });
 
   try {
     await jobQueue.enqueue(async () => {
-      // 既存セッションをクリア
+      userContext.switchUser(username);
+      const sessionManager = userContext.getSessionManager();
+
       sessionManager.delete();
 
-      // Claude を呼び出して新規セッション ID を取得（初回はツール不要なので1ターン）
       const result = await callClaude(
         "確定申告サポートセッションを開始します。準備完了を確認してください。",
         undefined,
@@ -57,8 +79,8 @@ export async function handleStart(
       }
 
       const row = buildPromptRow("読み取って");
-      await safeEditReply(interaction, {
-        content: buildOnboardingMessage(),
+      await interaction.editReply({
+        content: buildOnboardingMessage(username),
         components: row ? [row] : [],
       });
     });
@@ -68,7 +90,7 @@ export async function handleStart(
     const text = isQueueFull
       ? "現在処理中です。しばらくお待ちください。"
       : "エラーが発生しました。もう一度お試しください。";
-    await safeEditReply(interaction, text);
+    await interaction.editReply({ content: text, components: [] });
 
     if (!isQueueFull) {
       console.error("[start] Error:", err);

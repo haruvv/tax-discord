@@ -7,6 +7,7 @@ import {
   TextInputStyle,
 } from "discord.js";
 
+export const USER_PREFIX = "user:";
 export const BUTTON_YES = "confirm_yes";
 export const BUTTON_NO = "confirm_no";
 export const BUTTON_OTHER = "confirm_other";
@@ -68,6 +69,21 @@ export function buildPromptRow(action: string): ActionRowBuilder<ButtonBuilder> 
       .setCustomId(BUTTON_OTHER)
       .setLabel("その他（自由入力）")
       .setStyle(ButtonStyle.Secondary),
+  );
+}
+
+// Discord allows at most 5 buttons per ActionRow
+const MAX_BUTTONS_PER_ROW = 5;
+
+export function buildUserSelectRow(users: string[]): ActionRowBuilder<ButtonBuilder> {
+  const limited = users.slice(0, MAX_BUTTONS_PER_ROW);
+  return new ActionRowBuilder<ButtonBuilder>().addComponents(
+    limited.map((u) =>
+      new ButtonBuilder()
+        .setCustomId(`${USER_PREFIX}${u}`)
+        .setLabel(u)
+        .setStyle(ButtonStyle.Primary),
+    ),
   );
 }
 
