@@ -24,7 +24,7 @@ export async function handleStatus(
   const activeUser = userContext.getActiveUser();
   if (!activeUser) {
     await interaction.editReply(
-      "アクティブなユーザーがいません。`/start <username>` で開始してください。",
+      "アクティブなユーザーがいません。`/start` で開始してください。",
     );
     return;
   }

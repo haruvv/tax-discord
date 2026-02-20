@@ -46,7 +46,7 @@ export class UserContext {
 
   getSessionManager(): SessionManager {
     if (!this.activeUsername) {
-      throw new Error("No active user. Use /start <username> first.");
+      throw new Error("No active user. Use /start first.");
     }
     const sm = this.sessions.get(this.activeUsername);
     if (!sm) {
@@ -57,7 +57,7 @@ export class UserContext {
 
   getUserDocsPath(): string {
     if (!this.activeUsername) {
-      throw new Error("No active user. Use /start <username> first.");
+      throw new Error("No active user. Use /start first.");
     }
     return this.resolveDocsPath(this.activeUsername);
   }
